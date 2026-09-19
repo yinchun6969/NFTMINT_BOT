@@ -57,6 +57,27 @@ For direct Tailscale access, explicitly set `MINT_ALLOW_NON_LOOPBACK=true`, bind
 - The application password can only be created from the VPS terminal with `npm run set-password`; anonymous web visitors cannot create one.
 - If `MINT_PRIVATE_KEY` is configured, use SSH or a firewall-protected Tailscale path only; do not expose the service to the public internet.
 
+## VPS guided installer
+
+From an SSH terminal on an Ubuntu/Debian VPS, run:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/yinchun6969/NFTMINT_BOT/main/install_mint_forge.sh -o install_mint_forge.sh
+chmod +x install_mint_forge.sh
+./install_mint_forge.sh
+```
+
+The wizard asks for the install directory, SSH/Tailscale or Cloudflare Tunnel access, and whether an EVM environment key should be configured. It then installs or checks Node.js, npm, and Git, pulls Mint Forge from GitHub, creates a dedicated `mintforge` service user, sets the application password, and registers a systemd service.
+
+For Cloudflare Tunnel mode, the wizard guides you through creating a Tunnel, setting a Public Hostname (default `mint.91nft.cyou`), pointing the service to `http://127.0.0.1:8787`, and pasting the connector token. Configure the Cloudflare Access email/MFA policy in the Cloudflare dashboard.
+
+The installer never binds Node to `0.0.0.0` or opens port `8787`. View logs with:
+
+```bash
+sudo journalctl -u mint-forge -f
+sudo journalctl -u mint-forge-tunnel -f
+```
+
 ## Workflow
 
 1. Select a mode.

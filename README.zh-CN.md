@@ -69,6 +69,33 @@ ssh -N -L 8787:127.0.0.1:8787 user@你的VPS_IP
 - 应用密码只能由 VPS 终端的 `npm run set-password` 设置，不能由匿名网页访客创建。
 - 如果配置了 `MINT_PRIVATE_KEY`，请只使用 SSH 隧道或受防火墙保护的 Tailscale 访问，不要将服务公开到互联网。
 
+## VPS 小白一键向导
+
+在 Ubuntu/Debian VPS 中通过 SSH 登录后运行：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/yinchun6969/NFTMINT_BOT/main/install_mint_forge.sh -o install_mint_forge.sh
+chmod +x install_mint_forge.sh
+./install_mint_forge.sh
+```
+
+向导会依次引导你选择安装目录、SSH/Tailscale 或 Cloudflare Tunnel、是否配置 EVM 环境私钥，然后自动完成：
+
+1. 安装或检查 Node.js、npm 和 Git。
+2. 从 GitHub 拉取 Mint Forge 并安装依赖。
+3. 创建独立的 `mintforge` 系统用户。
+4. 设置应用密码并创建 systemd 开机启动服务。
+5. 可选安装 Cloudflare Tunnel 连接器。
+
+选择 Cloudflare Tunnel 时，向导会提示你在 Cloudflare Zero Trust 创建 Tunnel、设置 Public Hostname（默认 `mint.91nft.cyou`）、将 Service 指向 `http://127.0.0.1:8787`，再粘贴 connector token。Cloudflare Access 的邮箱/MFA 策略仍需在 Cloudflare 控制台中设置。
+
+向导不会把 Node 绑定到 `0.0.0.0`，不会自动开放 `8787`，也不会要求助记词。服务日志：
+
+```bash
+sudo journalctl -u mint-forge -f
+sudo journalctl -u mint-forge-tunnel -f
+```
+
 ## 使用流程
 
 1. 选择模式。

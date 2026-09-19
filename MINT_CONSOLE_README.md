@@ -32,6 +32,28 @@ ssh -N -L 8787:127.0.0.1:8787 user@你的VPS_IP
 
 登录保护包括 HttpOnly 会话 Cookie、CSRF 校验、失败登录限速和 12 小时会话过期。未登录时不能调用状态、预检、启动、停止和客户端事件 API。应用密码只能在 VPS 终端设置，网页访客不能创建密码。
 
+## VPS 小白一键部署
+
+Ubuntu/Debian VPS 通过 SSH 登录后运行：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/yinchun6969/NFTMINT_BOT/main/install_mint_forge.sh -o install_mint_forge.sh
+chmod +x install_mint_forge.sh
+./install_mint_forge.sh
+```
+
+向导会安装 Node.js/npm/Git，拉取 GitHub 代码，创建 `mintforge` 独立系统用户，设置应用密码并注册 systemd 服务。默认仍然是 `127.0.0.1:8787`，不会开放 Node 端口。
+
+选择 Cloudflare Tunnel 时，按照向导提示在 Cloudflare Zero Trust 创建 Tunnel，并把公共主机名（默认 `mint.91nft.cyou`）映射到 `http://127.0.0.1:8787`。然后把 connector token 粘贴回向导，最后在 Cloudflare Access 中设置邮箱/MFA 策略。
+
+常用维护命令：
+
+```bash
+sudo systemctl status mint-forge
+sudo journalctl -u mint-forge -f
+sudo journalctl -u mint-forge-tunnel -f
+```
+
 ## 支持模式
 
 1. **网站 / API**：适合 ZecMart 这种由网站 API 完成登记或分配的 mint。

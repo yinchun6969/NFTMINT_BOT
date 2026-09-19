@@ -28,6 +28,18 @@ ssh -N -L 8787:127.0.0.1:8787 user@VPS_IP
 
 然后在本机浏览器访问 `http://127.0.0.1:8787`。应用密码只能通过 VPS 终端的 `npm run set-password` 设置，不能由匿名网页访客创建。
 
+## VPS 一键向导 / VPS one-click installer
+
+在 Ubuntu/Debian VPS 的 SSH 终端运行：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/yinchun6969/NFTMINT_BOT/main/install_mint_forge.sh -o install_mint_forge.sh
+chmod +x install_mint_forge.sh
+./install_mint_forge.sh
+```
+
+向导会创建独立服务用户、systemd 开机启动、应用密码，并可选配置 Cloudflare Tunnel。Node 仍只监听 `127.0.0.1`，不会公开 `8787` 端口。执行前建议先阅读脚本内容，并确认 VPS 允许使用 `sudo`。
+
 ## 安全边界 / Safety boundary
 
 - 默认只预检，不提交订单、不广播交易。
