@@ -4,6 +4,8 @@ const $ = (id) => document.getElementById(id);
 const modeNames = { zecmart: "网站 / API", http: "通用 API", "evm-env": "合约 · 环境私钥", "evm-browser": "合约 · 浏览器钱包" };
 let selectedMode = "zecmart";
 let lastState = null;
+let authenticated = false;
+let csrfToken = "";
 
 function addLocalLog(message, level = "info") {
   const container = $("logs");
@@ -19,6 +21,55 @@ function addLocalLog(message, level = "info") {
   row.append(time, text);
   container.appendChild(row);
   container.scrollTop = container.scrollHeight;
+}
+
+function setAuthMessage(message) {
+  $("auth-message").textContent = message;
+}
+
+function setAuthError(message = "") {
+  $("auth-error").textContent = message;
+}
+
+function setAuthenticated(value, token = "") {
+  authenticated = Boolean(value);
+  csrfToken = token || "";
+  $("auth-gate").classList.toggle("visible", !authenticated);
+  $("app-shell").classList.toggle("locked", !authenticated);
+  $("app-shell").setAttribute("aria-hidden", String(!authenticated));
+  $("logout").hidden = !authenticated;
+  if (!authenticated) {
+    $("auth-password").value = "";
+    $("auth-password").focus();
+  }
+}
+
+async function checkAuth() {
+  try {
+    const result = await callApi("/api/auth/status", { headers: {} });
+    if (!result.configured) {
+      setAuthenticated(false);
+      $("auth-password").disabled = true;
+      $("login-button").disabled = true;
+      setAuthMessage("尚未设置应用密码。请先在 VPS 终端运行 npm run set-password，然后重启服务。");
+      return;
+    }
+    $("auth-password").disabled = false;
+    $("login-button").disabled = false;
+    if (result.authenticated) {
+      setAuthenticated(true, result.csrfToken);
+      await refreshState();
+      return;
+    }
+    setAuthenticated(false);
+    setAuthMessage("请输入应用密码。密码只在服务端校验，不会保存到网页。");
+  } catch (error) {
+    setAuthenticated(false);
+    $("auth-password").disabled = true;
+    $("login-button").disabled = true;
+    setAuthMessage("无法连接 Mint Forge，请确认 VPS 服务正在运行。");
+    setAuthError(error.message);
+  }
 }
 
 function showMode(mode) {
@@ -144,12 +195,24 @@ function configFromForm(forceDryRun = null) {
 }
 
 async function callApi(path, options = {}) {
+  const { skipCsrf = false, ...fetchOptions } = options;
+  const method = String(fetchOptions.method || "GET").toUpperCase();
+  const requestHeaders = { "content-type": "application/json", ...(fetchOptions.headers || {}) };
+  if (!skipCsrf && csrfToken && method !== "GET") requestHeaders["x-csrf-token"] = csrfToken;
   const response = await fetch(path, {
-    ...options,
-    headers: { "content-type": "application/json", ...(options.headers || {}) },
+    ...fetchOptions,
+    headers: requestHeaders,
   });
   const data = await response.json();
-  if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+  if (!response.ok) {
+    if (response.status === 401 && path !== "/api/auth/status" && path !== "/api/auth/login") {
+      setAuthenticated(false);
+      setAuthMessage("登录已过期，请重新输入应用密码。");
+    }
+    const error = new Error(data.error || `HTTP ${response.status}`);
+    error.status = response.status;
+    throw error;
+  }
   return data;
 }
 
@@ -304,12 +367,51 @@ async function stop() {
   }
 }
 
+async function login(event) {
+  event.preventDefault();
+  setAuthError("");
+  const password = $("auth-password").value;
+  if (!password) {
+    setAuthError("请输入应用密码");
+    return;
+  }
+  $("login-button").disabled = true;
+  try {
+    const result = await callApi("/api/auth/login", {
+      method: "POST",
+      skipCsrf: true,
+      body: JSON.stringify({ password }),
+    });
+    setAuthenticated(true, result.csrfToken);
+    await refreshState();
+  } catch (error) {
+    setAuthError(error.message);
+    $("login-button").disabled = false;
+    $("auth-password").select();
+  }
+}
+
+async function logout() {
+  try {
+    await callApi("/api/auth/logout", { method: "POST", body: "{}" });
+  } catch {
+    // Clear the local gate even if the session already expired.
+  }
+  setAuthenticated(false);
+  setAuthMessage("请输入应用密码重新进入控制台。");
+  $("auth-password").disabled = false;
+  $("login-button").disabled = false;
+  setAuthError("");
+}
+
 document.querySelectorAll(".mode-tab").forEach((button) => {
   button.addEventListener("click", () => showMode(button.dataset.mode));
 });
 $("preflight").addEventListener("click", preflight);
 $("start").addEventListener("click", start);
 $("stop").addEventListener("click", stop);
+$("login-form").addEventListener("submit", login);
+$("logout").addEventListener("click", logout);
 $("clear-log").addEventListener("click", () => { $("logs").innerHTML = '<div class="empty-log">日志会显示在这里…</div>'; });
 $("connect-wallet").addEventListener("click", async () => {
   try {
@@ -332,5 +434,7 @@ $("priceUnit").addEventListener("change", updatePricePreview);
 showMode("zecmart");
 $("confirmBroadcast").disabled = true;
 updatePricePreview();
-refreshState();
-setInterval(refreshState, 1000);
+checkAuth();
+setInterval(() => {
+  if (authenticated) refreshState();
+}, 1000);

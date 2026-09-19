@@ -9,9 +9,32 @@
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
+    <div id="auth-gate" class="auth-gate visible">
+      <section class="auth-card" aria-labelledby="auth-title">
+        <div class="brand-lockup auth-brand">
+          <div class="brand-mark">◆</div>
+          <div>
+            <div class="brand-name">MINT FORGE</div>
+            <div class="brand-sub">SECURE LOCAL ACCESS</div>
+          </div>
+        </div>
+        <div class="eyebrow">AUTHENTICATION REQUIRED</div>
+        <h1 id="auth-title">登录 Mint Forge</h1>
+        <p id="auth-message" class="auth-message">正在检查应用密码配置…</p>
+        <form id="login-form" class="auth-form">
+          <label class="field">
+            <span>应用密码</span>
+            <input id="auth-password" type="password" autocomplete="current-password" minlength="12" placeholder="输入 VPS 上设置的应用密码" required />
+          </label>
+          <button id="login-button" class="button primary" type="submit">进入控制台</button>
+          <div id="auth-error" class="auth-error" role="alert"></div>
+        </form>
+        <small class="auth-hint">首次使用请在 VPS 终端运行：<code>npm run set-password</code></small>
+      </section>
+    </div>
     <div class="ambient ambient-a"></div>
     <div class="ambient ambient-b"></div>
-    <div class="shell">
+    <div id="app-shell" class="shell locked" aria-hidden="true">
       <header class="topbar">
         <div class="brand-lockup">
           <div class="brand-mark">◆</div>
@@ -20,7 +43,10 @@
             <div class="brand-sub">本地 NFT 执行控制台</div>
           </div>
         </div>
-        <div class="top-status"><span id="live-dot" class="dot"></span><span id="runtime-label">LOCAL ONLY</span></div>
+        <div class="topbar-actions">
+          <div class="top-status"><span id="live-dot" class="dot"></span><span id="runtime-label">LOCAL ONLY</span></div>
+          <button id="logout" class="auth-button" type="button" hidden>退出登录</button>
+        </div>
       </header>
 
       <main class="layout">

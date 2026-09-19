@@ -26,6 +26,7 @@ Linux/macOS：
 
 ```bash
 npm install
+npm run set-password
 npm start
 ```
 
@@ -40,6 +41,33 @@ Windows PowerShell：
 ```text
 http://127.0.0.1:8787
 ```
+
+首次启动前，请在 VPS 本机终端或 SSH 终端设置应用密码：
+
+```bash
+npm run set-password
+```
+
+密码只保存为本机哈希文件 `.mint-console-auth.json`，不会写入网页、GitHub 或日志。密码长度要求为至少 12 个字节。
+
+## VPS 安全访问
+
+推荐让 Node 服务继续只监听 `127.0.0.1`，通过 SSH 隧道访问：
+
+```bash
+ssh -N -L 8787:127.0.0.1:8787 user@你的VPS_IP
+```
+
+保持这个 SSH 窗口运行，然后在自己电脑的浏览器打开 `http://127.0.0.1:8787`。这个地址是本机浏览器，不是 VPS 的公网地址。
+
+如果使用 Tailscale 直连，必须显式配置 `MINT_ALLOW_NON_LOOPBACK=true`，并只绑定 Tailscale 网卡地址、在防火墙中只允许自己的 Tailscale 节点访问，同时仍然设置应用密码。不要使用 `0.0.0.0` 无保护运行。
+
+## 应用认证
+
+- 未登录时，状态、预检、启动、停止和客户端事件 API 都会被拒绝。
+- 登录使用 HttpOnly 会话 Cookie、CSRF 校验、失败次数限制和 12 小时会话过期。
+- 应用密码只能由 VPS 终端的 `npm run set-password` 设置，不能由匿名网页访客创建。
+- 如果配置了 `MINT_PRIVATE_KEY`，请只使用 SSH 隧道或受防火墙保护的 Tailscale 访问，不要将服务公开到互联网。
 
 ## 使用流程
 

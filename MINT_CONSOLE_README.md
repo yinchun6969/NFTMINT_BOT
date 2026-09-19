@@ -6,6 +6,7 @@
 
 ```bash
 npm install
+npm run set-password
 npm start
 ```
 
@@ -16,6 +17,20 @@ http://127.0.0.1:8787
 ```
 
 Linux 也可以直接运行 `start_mint_console.sh`；Windows PowerShell 可以运行 `start_mint_console.ps1`。
+
+首次启动时，请在 VPS 本机终端或 SSH 终端运行 `npm run set-password` 设置应用密码。密码只保存为 `.mint-console-auth.json` 中的哈希，文件会被 `.gitignore` 忽略，且不会进入网页或日志。
+
+## 推荐的 VPS 访问方式
+
+服务默认只监听 `127.0.0.1`。推荐使用 SSH 本地端口转发：
+
+```bash
+ssh -N -L 8787:127.0.0.1:8787 user@你的VPS_IP
+```
+
+然后在本机浏览器打开 `http://127.0.0.1:8787`。如使用 Tailscale 直连，必须显式设置 `MINT_ALLOW_NON_LOOPBACK=true`，只绑定 Tailscale 地址并配置防火墙，同时仍然需要应用密码；不要把服务绑定到 `0.0.0.0` 后直接暴露公网。
+
+登录保护包括 HttpOnly 会话 Cookie、CSRF 校验、失败登录限速和 12 小时会话过期。未登录时不能调用状态、预检、启动、停止和客户端事件 API。应用密码只能在 VPS 终端设置，网页访客不能创建密码。
 
 ## 支持模式
 

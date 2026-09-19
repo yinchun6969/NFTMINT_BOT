@@ -18,6 +18,7 @@ The gas boost applies to gas fees, not the gas limit. A higher boost increases t
 
 ```bash
 npm install
+npm run set-password
 npm start
 ```
 
@@ -28,6 +29,33 @@ http://127.0.0.1:8787
 ```
 
 On Linux/macOS you can run `./start_mint_console.sh`. On Windows PowerShell run `./start_mint_console.ps1`.
+
+Set the application password once from the VPS terminal or an SSH terminal:
+
+```bash
+npm run set-password
+```
+
+The password is stored only as a local hash in `.mint-console-auth.json`; it is not placed in the web page, GitHub, or logs. The minimum length is 12 bytes.
+
+## Secure VPS access
+
+Keep Node bound to `127.0.0.1` and use an SSH tunnel:
+
+```bash
+ssh -N -L 8787:127.0.0.1:8787 user@VPS_IP
+```
+
+Keep the SSH session open and browse to `http://127.0.0.1:8787` on your own computer. This is the local browser address, not the VPS public address.
+
+For direct Tailscale access, explicitly set `MINT_ALLOW_NON_LOOPBACK=true`, bind only to the Tailscale interface address, restrict the port to your Tailscale nodes with a firewall, and still configure the application password. Do not run an unprotected `0.0.0.0` listener.
+
+## Application authentication
+
+- Unauthenticated clients cannot access state, preflight, start, stop, or client-event APIs.
+- Login uses an HttpOnly session cookie, CSRF protection, failed-login rate limiting, and a 12-hour session expiry.
+- The application password can only be created from the VPS terminal with `npm run set-password`; anonymous web visitors cannot create one.
+- If `MINT_PRIVATE_KEY` is configured, use SSH or a firewall-protected Tailscale path only; do not expose the service to the public internet.
 
 ## Workflow
 

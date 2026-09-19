@@ -5,6 +5,11 @@ const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
 const { URL } = require("node:url");
+const {
+  AUTH_FILE,
+  loadAuthRecord,
+  verifyPassword,
+} = require("./auth");
 
 let ethers = null;
 try {
@@ -18,6 +23,11 @@ const PORT = Number(process.env.MINT_PORT || 8787);
 const PUBLIC_DIR = path.join(__dirname, "public");
 const STATE_FILE = path.join(__dirname, ".mint-console-state.json");
 const MAX_LOGS = 300;
+const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
+const LOGIN_WINDOW_MS = 15 * 60 * 1000;
+const LOGIN_MAX_FAILURES = 5;
+const sessions = new Map();
+const loginAttempts = new Map();
 
 let stopRequested = false;
 let job = freshJob();
@@ -102,12 +112,13 @@ function parseJsonBody(request) {
   });
 }
 
-function sendJson(response, status, data) {
+function sendJson(response, status, data, headers = {}) {
   const body = JSON.stringify(data);
   response.writeHead(status, {
     "content-type": "application/json; charset=utf-8",
     "cache-control": "no-store",
     "content-length": Buffer.byteLength(body),
+    ...headers,
   });
   response.end(body);
 }
@@ -119,6 +130,114 @@ function sendText(response, status, body, contentType = "text/plain; charset=utf
     "content-length": Buffer.byteLength(body),
   });
   response.end(body);
+}
+
+function isLoopbackHost(host) {
+  return ["127.0.0.1", "::1", "localhost"].includes(String(host).toLowerCase());
+}
+
+function cleanupAuthState() {
+  const now = Date.now();
+  for (const [token, session] of sessions) {
+    if (now - session.lastSeenAt > SESSION_TTL_MS) sessions.delete(token);
+  }
+  for (const [key, attempt] of loginAttempts) {
+    if (now - attempt.firstFailedAt > LOGIN_WINDOW_MS) loginAttempts.delete(key);
+  }
+}
+
+function clientKey(request) {
+  return request.socket.remoteAddress || "unknown";
+}
+
+function cookieValue(request, name) {
+  const cookies = String(request.headers.cookie || "").split(";");
+  for (const item of cookies) {
+    const separator = item.indexOf("=");
+    if (separator < 0) continue;
+    const key = item.slice(0, separator).trim();
+    if (key === name) return item.slice(separator + 1).trim();
+  }
+  return "";
+}
+
+function safeEqualText(left, right) {
+  const first = Buffer.from(String(left || ""));
+  const second = Buffer.from(String(right || ""));
+  return first.length > 0 && first.length === second.length && crypto.timingSafeEqual(first, second);
+}
+
+function sessionCookie(token, maxAgeSeconds = Math.floor(SESSION_TTL_MS / 1000)) {
+  const secure = process.env.MINT_COOKIE_SECURE === "true" ? "; Secure" : "";
+  return `mint_session=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${maxAgeSeconds}${secure}`;
+}
+
+function currentSession(request) {
+  cleanupAuthState();
+  const token = cookieValue(request, "mint_session");
+  const session = token ? sessions.get(token) : null;
+  if (!session) return null;
+  if (Date.now() - session.lastSeenAt > SESSION_TTL_MS) {
+    sessions.delete(token);
+    return null;
+  }
+  session.lastSeenAt = Date.now();
+  return { token, ...session };
+}
+
+function authConfigured() {
+  return Boolean(loadAuthRecord());
+}
+
+function loginAttemptState(request) {
+  cleanupAuthState();
+  const key = clientKey(request);
+  const attempt = loginAttempts.get(key);
+  if (!attempt || Date.now() - attempt.firstFailedAt > LOGIN_WINDOW_MS) {
+    loginAttempts.delete(key);
+    return { key, blocked: false, retryAfterSeconds: 0 };
+  }
+  return {
+    key,
+    blocked: attempt.failures >= LOGIN_MAX_FAILURES,
+    retryAfterSeconds: Math.max(1, Math.ceil((LOGIN_WINDOW_MS - (Date.now() - attempt.firstFailedAt)) / 1000)),
+  };
+}
+
+function recordLoginFailure(key) {
+  const now = Date.now();
+  const current = loginAttempts.get(key);
+  if (!current || now - current.firstFailedAt > LOGIN_WINDOW_MS) {
+    loginAttempts.set(key, { firstFailedAt: now, failures: 1 });
+    return;
+  }
+  current.failures += 1;
+}
+
+function requireSession(request, response) {
+  const session = currentSession(request);
+  if (!session) {
+    sendJson(response, 401, { error: "请先登录 Mint Forge" });
+    return null;
+  }
+  if (["POST", "PUT", "PATCH", "DELETE"].includes(request.method)) {
+    const csrf = request.headers["x-csrf-token"];
+    if (!safeEqualText(csrf, session.csrfToken)) {
+      sendJson(response, 403, { error: "CSRF 校验失败，请刷新页面后重试" });
+      return null;
+    }
+  }
+  return session;
+}
+
+function ensureBindSafety() {
+  if (isLoopbackHost(HOST)) return;
+  if (process.env.MINT_ALLOW_NON_LOOPBACK !== "true") {
+    throw new Error("安全保护：非回环监听已禁用。请保持 MINT_HOST=127.0.0.1，或明确设置 MINT_ALLOW_NON_LOOPBACK=true");
+  }
+  if (!authConfigured()) {
+    throw new Error(`安全保护：非回环监听必须先设置应用密码（运行 npm run set-password；密码文件：${AUTH_FILE}）`);
+  }
 }
 
 function publicState() {
@@ -686,12 +805,71 @@ function serveStatic(request, response, pathname) {
   });
 }
 
+ensureBindSafety();
 const server = http.createServer(async (request, response) => {
   const url = new URL(request.url, `http://${request.headers.host || "localhost"}`);
   try {
     if (url.pathname === "/api/health" && request.method === "GET") {
-      sendJson(response, 200, { ok: true, host: HOST, port: PORT, ...publicState() });
+      sendJson(response, 200, {
+        ok: true,
+        loopbackOnly: isLoopbackHost(HOST),
+        authConfigured: authConfigured(),
+        authenticated: Boolean(currentSession(request)),
+      });
       return;
+    }
+    if (url.pathname === "/api/auth/status" && request.method === "GET") {
+      const session = currentSession(request);
+      sendJson(response, 200, {
+        ok: true,
+        configured: authConfigured(),
+        authenticated: Boolean(session),
+        ...(session ? { csrfToken: session.csrfToken } : {}),
+      });
+      return;
+    }
+    if (url.pathname === "/api/auth/login" && request.method === "POST") {
+      const attempt = loginAttemptState(request);
+      if (attempt.blocked) {
+        sendJson(response, 429, {
+          error: `登录失败次数过多，请 ${attempt.retryAfterSeconds} 秒后重试`,
+          retryAfterSeconds: attempt.retryAfterSeconds,
+        }, { "retry-after": String(attempt.retryAfterSeconds) });
+        return;
+      }
+      if (!authConfigured()) {
+        sendJson(response, 503, { error: "尚未设置应用密码，请在 VPS 终端运行 npm run set-password" });
+        return;
+      }
+      const input = await parseJsonBody(request);
+      if (!verifyPassword(input.password)) {
+        recordLoginFailure(attempt.key);
+        sendJson(response, 401, { error: "应用密码错误" });
+        return;
+      }
+      loginAttempts.delete(attempt.key);
+      const token = crypto.randomBytes(32).toString("hex");
+      const csrfToken = crypto.randomBytes(24).toString("hex");
+      sessions.set(token, {
+        csrfToken,
+        createdAt: Date.now(),
+        lastSeenAt: Date.now(),
+      });
+      sendJson(response, 200, { ok: true, csrfToken }, { "set-cookie": sessionCookie(token) });
+      return;
+    }
+    if (url.pathname === "/api/auth/logout" && request.method === "POST") {
+      const session = currentSession(request);
+      if (session && !safeEqualText(request.headers["x-csrf-token"], session.csrfToken)) {
+        sendJson(response, 403, { error: "CSRF 校验失败，请刷新页面后重试" });
+        return;
+      }
+      if (session) sessions.delete(session.token);
+      sendJson(response, 200, { ok: true }, { "set-cookie": sessionCookie("", 0) });
+      return;
+    }
+    if (url.pathname.startsWith("/api/")) {
+      if (!requireSession(request, response)) return;
     }
     if (url.pathname === "/api/state" && request.method === "GET") {
       sendJson(response, 200, publicState());
@@ -773,6 +951,7 @@ server.listen(PORT, HOST, () => {
   console.log(`Mint Console listening at http://${HOST}:${PORT}`);
   console.log(`EVM signing: ${ethers ? "available" : "missing ethers dependency"}`);
   console.log(`Private key configured: ${process.env.MINT_PRIVATE_KEY ? "yes" : "no"}`);
+  console.log(`Application password: ${authConfigured() ? "configured" : "not configured; run npm run set-password"}`);
 });
 
 function shutdown() {

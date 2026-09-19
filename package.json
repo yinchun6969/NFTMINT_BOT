@@ -5,7 +5,8 @@
   "description": "Loopback-only reusable NFT mint console",
   "type": "commonjs",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "set-password": "node auth_setup.js"
   },
   "dependencies": {
     "ethers": "^6.15.0"
