@@ -1,0 +1,6 @@
+node_modules/
+.mint-console-state.json
+.zecmart-mint-state.json
+.env
+.env.*
+!.env.example

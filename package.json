@@ -1,0 +1,13 @@
+{
+  "name": "local-mint-console",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Loopback-only reusable NFT mint console",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "ethers": "^6.15.0"
+  }
+}
